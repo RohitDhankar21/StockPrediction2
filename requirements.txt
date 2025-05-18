@@ -11,3 +11,7 @@ statsmodels
 prophet
 cmdstanpy
 cufflinks
+requests
+beautifulsoup4
+statsmodels
+tqdm

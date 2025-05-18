@@ -146,10 +146,13 @@ if train_button:
     st.write(f"**Ensemble MAPE:** {mape:.2f}%")
 
     # --- PLOT RESULTS ---
-    fig, ax = plt.subplots(figsize=(10, 5))
+
+    ensemble_name = "Transformer + Linear Regression (Average Ensemble)"
+    
+    ffig, ax = plt.subplots(figsize=(10, 5))
     ax.plot(y_test, label='Actual Prices', color='blue')
     ax.plot(ensemble_preds, label='Ensemble Predictions', color='red')
-    ax.set_title(f"Actual vs Predicted Closing Prices for {stock_symbol}")
+    ax.set_title(f"Actual vs Predicted Closing Prices for {stock_symbol}\n({ensemble_name})")
     ax.set_xlabel("Test Sample Index")
     ax.set_ylabel("Price")
     ax.legend()

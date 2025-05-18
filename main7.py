@@ -13,7 +13,7 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error
 import matplotlib.pyplot as plt
 from statsmodels.tsa.arima.model import ARIMA
 
-st.title("Stock Price Prediction with Transformer + ARIMA Ensemble")
+st.title("Stock Price Prediction with Transformer + Linear Regression Ensemble")
 
 # --- PARAMETERS ---
 stock_symbol = st.text_input("Stock Symbol", "AAPL")
@@ -26,7 +26,7 @@ batch_size = st.number_input("Batch Size", min_value=8, max_value=256, value=64,
 # --- LOAD DATA ---
 @st.cache_data
 def load_data(symbol, start, end):
-    data = yf.download(symbol, start=start, end=end, auto_adjust=True)
+    data = yf.download(symbol, start=start, end=end)
     return data['Close'].values
 
 prices = load_data(stock_symbol, start_date, end_date)
@@ -126,20 +126,40 @@ if train_button:
     # Inverse transform to original scale
     transformer_preds = scaler_y.inverse_transform(transformer_preds_scaled.reshape(-1, 1)).flatten()
 
-    # ARIMA model on training target data (original scale)
+    # Linear Regression Model
+    linear_model = LinearRegression()
+    linear_model.fit(X_train_scaled.reshape(-1, window_size), y_train_scaled)
+    linear_preds_scaled = linear_model.predict(X_test_scaled.reshape(-1, window_size))
+    linear_preds = scaler_y.inverse_transform(linear_preds_scaled.reshape(-1, 1)).flatten()
+
+    # Ensemble (weighted average)
+    ensemble_preds = (transformer_preds + linear_preds) / 2
+
+        # 5. ARIMA model
+    # -------------------------------
     arima_model = ARIMA(y_train, order=(2, 1, 0))
     arima_fitted = arima_model.fit()
 
-    # Forecast with ARIMA on test set length
-    arima_preds = arima_fitted.forecast(steps=len(y_test))
+    
+    # Forecast with ARIMA
+    arima_preds = arima_fitted.forecast(steps=len(y_test)).ravel()
 
-    # --- ENSEMBLE (Weighted Average) ---
+
+        # 6. Ensemble Predictions (Weighted Average)
+    # -------------------------------
+    # Weights for the models
     transformer_weight = 0.20
     arima_weight = 0.80
-    assert abs(transformer_weight + arima_weight - 1) < 1e-6, "Weights must sum to 1."
-
-    ensemble_preds = (transformer_preds * transformer_weight) + (arima_preds * arima_weight)
-
+    
+        # Check if weights sum to 1
+    assert transformer_weight + arima_weight == 1, "Weights must sum to 1."
+    
+    # Make sure transformer predictions are reshaped correctly
+    transformer_preds = transformer_test_preds.ravel()
+    
+    # Calculate weighted average of predictions
+    ensemble_preds2 = (transformer_preds * transformer_weight) + (arima_preds * arima_weight)
+    
     # --- METRICS ---
     mse = mean_squared_error(y_test, ensemble_preds)
     mae = mean_absolute_error(y_test, ensemble_preds)
@@ -151,30 +171,58 @@ if train_button:
     st.write(f"**Ensemble RMSE:** {rmse:.4f}")
     st.write(f"**Ensemble MAPE:** {mape:.2f}%")
 
+        # --- METRICS ---
+    mse = mean_squared_error(y_test, ensemble_preds2)
+    mae = mean_absolute_error(y_test, ensemble_preds2)
+    rmse = np.sqrt(mse)
+    mape = np.mean(np.abs((y_test - ensemble_preds2) / y_test)) * 100
+
+    st.write(f"**Ensemble MSE:** {mse:.4f}")
+    st.write(f"**Ensemble MAE:** {mae:.4f}")
+    st.write(f"**Ensemble RMSE:** {rmse:.4f}")
+    st.write(f"**Ensemble MAPE:** {mape:.2f}%")
+
     # --- PLOT RESULTS ---
 
-    # Plot Actual Prices separately
-    fig_actual, ax_actual = plt.subplots(figsize=(10, 5))
-    ax_actual.plot(y_test, label='Actual Prices', color='blue')
-    ax_actual.set_title(f"Actual Closing Prices for {stock_symbol}")
-    ax_actual.set_xlabel("Test Sample Index")
-    ax_actual.set_ylabel("Price")
-    ax_actual.legend()
-    st.pyplot(fig_actual)
+    ensemble_name = "Transformer + Linear Regression (Average Ensemble)"
+    
 
-    # Plot Ensemble Predictions separately
-    fig_pred, ax_pred = plt.subplots(figsize=(10, 5))
-    ax_pred.plot(ensemble_preds, label='Ensemble Predictions', color='red')
-    ax_pred.set_title(f"Ensemble Predictions for {stock_symbol}\n(Transformer + ARIMA)")
-    ax_pred.set_xlabel("Test Sample Index")
-    ax_pred.set_ylabel("Price")
-    ax_pred.legend()
-    st.pyplot(fig_pred)
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.plot(y_test, label='Actual Prices', color='blue')
+    ax.plot(ensemble_preds, label='Ensemble Predictions', color='red')
+    ax.set_title(f"Actual vs Predicted Closing Prices for {stock_symbol}\n({ensemble_name})")
+    ax.set_xlabel("Test Sample Index")
+    ax.set_ylabel("Price")
+    ax.legend()
+    st.pyplot(fig)
 
     # Plot training loss curve
-    fig_loss, ax_loss = plt.subplots()
-    ax_loss.plot(loss_progress, label="Training Loss")
-    ax_loss.set_title("Training Loss Over Epochs")
-    ax_loss.set_xlabel("Epoch")
-    ax_loss.set_ylabel("Loss")
-    st.pyplot(fig_loss)
+    fig2, ax2 = plt.subplots()
+    ax2.plot(loss_progress, label="Training Loss")
+    ax2.set_title("Training Loss Over Epochs")
+    ax2.set_xlabel("Epoch")
+    ax2.set_ylabel("Loss")
+    st.pyplot(fig2)
+
+
+        # --- PLOT RESULTS ---
+
+    ensemble_name2 = "Transformer + ARIMA (Average Ensemble)"
+    
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.plot(y_test, label='Actual Prices', color='blue')
+    ax.plot(ensemble_preds2, label='Ensemble Predictions', color='red')
+    ax.set_title(f"Actual vs Predicted Closing Prices for {stock_symbol}\n({ensemble_name2})")
+    ax.set_xlabel("Test Sample Index")
+    ax.set_ylabel("Price")
+    ax.legend()
+    st.pyplot(fig)
+
+    # Plot training loss curve
+    fig2, ax2 = plt.subplots()
+    ax2.plot(loss_progress, label="Training Loss")
+    ax2.set_title("Training Loss Over Epochs")
+    ax2.set_xlabel("Epoch")
+    ax2.set_ylabel("Loss")
+    st.pyplot(fig2)

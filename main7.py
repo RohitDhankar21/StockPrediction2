@@ -13,7 +13,6 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error
 import matplotlib.pyplot as plt
 from statsmodels.tsa.arima.model import ARIMA
 
-st.set_option('deprecation.showPyplotGlobalUse', False)
 st.title("Stock Price Prediction: Transformer + Linear Regression + ARIMA Ensemble")
 
 # --- USER INPUTS ---

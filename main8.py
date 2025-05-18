@@ -146,21 +146,25 @@ if train_button:
     st.write(f"**Ensemble RMSE:** {rmse:.4f}")
     st.write(f"**Ensemble MAPE:** {mape:.2f}%")
 
-
-    # -------------------------------
+    
+     # -------------------------------
     # 5. ARIMA model (on raw unscaled data)
     # -------------------------------
     
-    # Re-extract original y (raw prices, not split yet)
-    _, y_full = create_sequences(features, target, window=10)
-    _, y_test_raw = train_test_split(y_full, test_size=0.2, random_state=42)
+    # Reuse full original price series (before sequence creation)
+    raw_prices = prices  # unscaled
     
-    # Fit ARIMA on unscaled y_train
-    arima_model = ARIMA(y_full[:-len(y_test_raw)], order=(5, 1, 2))  # Adjusted order to reduce flat-line risk
+    # Fit ARIMA on the training portion of the original series
+    train_size = int(len(raw_prices) * 0.8)
+    arima_train = raw_prices[:train_size]
+    arima_test = raw_prices[train_size:]
+    
+    # Fit ARIMA model (you can tune order if needed)
+    arima_model = ARIMA(arima_train, order=(5, 1, 2))  # (p,d,q) values can be tuned
     arima_fitted = arima_model.fit()
     
-    # Forecast the test length
-    arima_preds = arima_fitted.forecast(steps=len(y_test_raw)).ravel()
+    # Forecast the test set length
+    arima_preds = arima_fitted.forecast(steps=len(arima_test)).ravel()
 
     # --- Transformer + ARIMA Weighted Ensemble ---
     transformer_weight = 0.20

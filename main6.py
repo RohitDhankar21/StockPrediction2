@@ -97,6 +97,8 @@ loss_progress = []
 
 def train_model(model, loader, optimizer, criterion, epochs):
     model.train()
+    epoch_display = st.empty()  # placeholder to update the line
+
     for epoch in range(epochs):
         total_loss = 0
         for inputs, targets in loader:
@@ -108,7 +110,7 @@ def train_model(model, loader, optimizer, criterion, epochs):
             total_loss += loss.item()
         avg_loss = total_loss / len(loader)
         loss_progress.append(avg_loss)
-        st.write(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.6f}")
+        epoch_display.text(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.6f}")  # update single line
 
 train_button = st.button("Train Model")
 if train_button:

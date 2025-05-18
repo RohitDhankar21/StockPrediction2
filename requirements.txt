@@ -1,0 +1,13 @@
+streamlit
+torch
+torchvision
+torchaudio
+numpy
+pandas
+yfinance
+scikit-learn
+matplotlib
+statsmodels
+prophet
+cmdstanpy
+cufflinks

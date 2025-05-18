@@ -150,7 +150,7 @@ if train_button:
         # --- ARIMA MODEL ---
     arima_model = ARIMA(y_train, order=(2, 1, 0))
     arima_fitted = arima_model.fit()
-    arima_preds = arima_fitted.forecast(steps=len(y_test)).values
+    arima_preds = np.array(arima_fitted.forecast(steps=len(y_test)))
 
     # --- Transformer + ARIMA Weighted Ensemble ---
     transformer_weight = 0.20

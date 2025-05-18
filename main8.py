@@ -11,6 +11,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 import matplotlib.pyplot as plt
+from statsmodels.tsa.arima.model import ARIMA
 
 st.title("Stock Price Prediction with Transformer + Linear Regression Ensemble")
 
@@ -145,6 +146,40 @@ if train_button:
     st.write(f"**Ensemble RMSE:** {rmse:.4f}")
     st.write(f"**Ensemble MAPE:** {mape:.2f}%")
 
+
+        # --- ARIMA MODEL ---
+    arima_model = ARIMA(y_train, order=(2, 1, 0))
+    arima_fitted = arima_model.fit()
+    arima_preds = arima_fitted.forecast(steps=len(y_test)).values
+
+    # --- Transformer + ARIMA Weighted Ensemble ---
+    transformer_weight = 0.20
+    arima_weight = 0.80
+    transformer_preds = transformer_preds.flatten()
+    arima_transformer_preds = (transformer_preds * transformer_weight) + (arima_preds * arima_weight)
+
+    # --- METRICS for ARIMA-Transformer Ensemble ---
+    mse_arima = mean_squared_error(y_test, arima_transformer_preds)
+    mae_arima = mean_absolute_error(y_test, arima_transformer_preds)
+    rmse_arima = np.sqrt(mse_arima)
+    mape_arima = np.mean(np.abs((y_test - arima_transformer_preds) / y_test)) * 100
+
+    st.write(f"### Transformer + ARIMA (Weighted Ensemble)")
+    st.write(f"**MSE:** {mse_arima:.4f}")
+    st.write(f"**MAE:** {mae_arima:.4f}")
+    st.write(f"**RMSE:** {rmse_arima:.4f}")
+    st.write(f"**MAPE:** {mape_arima:.2f}%")
+
+    # --- PLOT ARIMA-Transformer Ensemble ---
+    fig3, ax3 = plt.subplots(figsize=(10, 5))
+    ax3.plot(y_test, label='Actual Prices', color='blue')
+    ax3.plot(arima_transformer_preds, label='Transformer + ARIMA Predictions', color='green')
+    ax3.set_title(f"Actual vs Transformer+ARIMA Predictions for {stock_symbol}")
+    ax3.set_xlabel("Test Sample Index")
+    ax3.set_ylabel("Price")
+    ax3.legend()
+    st.pyplot(fig3)
+    
     # --- PLOT RESULTS ---
 
     ensemble_name = "Transformer + Linear Regression (Average Ensemble)"

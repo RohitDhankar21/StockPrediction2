@@ -46,6 +46,7 @@ def train_transformer_model(model, X_train, y_train, epochs=10, lr=0.001):
     dataset = TensorDataset(torch.tensor(X_train, dtype=torch.float32), torch.tensor(y_train, dtype=torch.float32))
     loader = DataLoader(dataset, batch_size=64, shuffle=True)
 
+    progress_bar = st.progress(0)
     for epoch in range(epochs):
         epoch_loss = 0
         for inputs, targets in loader:
@@ -56,6 +57,8 @@ def train_transformer_model(model, X_train, y_train, epochs=10, lr=0.001):
             optimizer.step()
             epoch_loss += loss.item()
         st.write(f"Epoch {epoch+1}/{epochs} - Loss: {epoch_loss/len(loader):.6f}")
+        progress_bar.progress((epoch+1)/epochs)
+    progress_bar.empty()
     return model
 
 # --------- Main Streamlit App ---------
@@ -104,55 +107,44 @@ def main():
     linear_model = LinearRegression()
     linear_model.fit(X_train_scaled, y_train)
 
-    # Train Transformer model
+    # Define Transformer model
     input_dim = 64
     num_features = X_train.shape[1] // 10
     transformer_model = TransformerModel(input_dim=input_dim, num_features=num_features)
 
+    # Add slider for epochs
+    epochs = st.slider("Select number of training epochs for Transformer", min_value=1, max_value=100, value=10, step=1)
+
     if st.button("Train Transformer Model"):
         with st.spinner("Training Transformer..."):
-            transformer_model = train_transformer_model(transformer_model, X_train_scaled, y_train, epochs=10)
+            transformer_model = train_transformer_model(transformer_model, X_train_scaled, y_train, epochs=epochs)
         st.success("Transformer model training completed!")
-
-    if 'transformer_model_trained' not in st.session_state:
-        st.session_state['transformer_model_trained'] = False
-
-    # Save model in session state after training
-    if st.button("Save Transformer Model"):
         st.session_state.transformer_model = transformer_model
         st.session_state.transformer_model_trained = True
-        st.success("Transformer model saved in session!")
 
     # Use saved model if available
     if st.session_state.get('transformer_model_trained', False):
         transformer_model = st.session_state.transformer_model
         transformer_model.eval()
 
-        # Get predictions from each model
+        # Linear Regression predictions
+        lr_test_preds = linear_model.predict(X_test_scaled)
+
+        # Transformer predictions
         with torch.no_grad():
             transformer_test_preds = transformer_model(torch.tensor(X_test_scaled, dtype=torch.float32)).numpy().ravel()
-        lr_test_preds = linear_model.predict(X_test_scaled)
+
+        # ARIMA model on training target data
         arima_model = ARIMA(y_train, order=(2, 1, 0))
         arima_fitted = arima_model.fit()
         arima_preds = arima_fitted.forecast(steps=len(y_test)).ravel()
 
-        # Ensure proper shape and type for all
-        y_test = np.array(y_test).astype(float).ravel()
-        transformer_test_preds = np.array(transformer_test_preds).astype(float).ravel()
-        arima_preds = np.array(arima_preds).astype(float).ravel()
-        lr_test_preds = np.array(lr_test_preds).astype(float).ravel()
-
-        # Ensemble prediction
+        # Ensemble weighted average (adjust weights here)
         transformer_weight = 0.2
-        arima_weight = 0.6
-        linear_weight = 0.2
-        assert abs(transformer_weight + arima_weight + linear_weight - 1.0) < 1e-6
+        arima_weight = 0.8
+        assert abs(transformer_weight + arima_weight - 1.0) < 1e-6, "Weights must sum to 1."
 
-        ensemble_preds = (
-            transformer_weight * transformer_test_preds +
-            arima_weight * arima_preds +
-            linear_weight * lr_test_preds
-        ).astype(float).ravel()
+        ensemble_preds = transformer_weight * transformer_test_preds + arima_weight * arima_preds
 
         # Evaluation metrics
         mse = mean_squared_error(y_test, ensemble_preds)
@@ -161,16 +153,16 @@ def main():
         mape = np.mean(np.abs((y_test - ensemble_preds) / y_test)) * 100
         r2 = r2_score(y_test, ensemble_preds)
 
-        st.subheader("📊 Evaluation Metrics on Test Set")
+        st.subheader("Evaluation Metrics on Test Set")
         st.markdown(f"""
-        - **Mean Squared Error (MSE)**: {mse:.4f}  
-        - **Mean Absolute Error (MAE)**: {mae:.4f}  
-        - **Root Mean Squared Error (RMSE)**: {rmse:.4f}  
-        - **Mean Absolute Percentage Error (MAPE)**: {mape:.2f}%  
-        - **R-squared (R²)**: {r2:.4f}
+        - Mean Squared Error (MSE): **{mse:.4f}**  
+        - Mean Absolute Error (MAE): **{mae:.4f}**  
+        - Root Mean Squared Error (RMSE): **{rmse:.4f}**  
+        - Mean Absolute Percentage Error (MAPE): **{mape:.2f}%**  
+        - R-squared (R²): **{r2:.4f}**
         """)
 
-        # Plot ensemble prediction
+        # Plot ensemble predictions
         fig, ax = plt.subplots(figsize=(12, 6))
         ax.plot(y_test, label="Actual Close Price")
         ax.plot(ensemble_preds, label="Ensemble Prediction")
@@ -181,13 +173,13 @@ def main():
         st.pyplot(fig)
 
         # Optionally plot individual model predictions
-        if st.checkbox("🔍 Show individual model predictions"):
+        if st.checkbox("Show individual model predictions (Transformer, ARIMA, Linear Regression)"):
             fig2, ax2 = plt.subplots(figsize=(12, 6))
             ax2.plot(y_test, label="Actual Close Price")
             ax2.plot(transformer_test_preds, label="Transformer Predictions")
             ax2.plot(arima_preds, label="ARIMA Predictions")
             ax2.plot(lr_test_preds, label="Linear Regression Predictions")
-            ax2.set_title(f"{company_name} ({selected_ticker}) - Individual Model Predictions")
+            ax2.set_title(f"{company_name} ({selected_ticker}) - Model Predictions Comparison")
             ax2.set_xlabel("Test Sample Index")
             ax2.set_ylabel("Price")
             ax2.legend()

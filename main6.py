@@ -1,3 +1,5 @@
+# stock_prediction_app.py
+
 import streamlit as st
 import torch
 import torch.nn as nn
@@ -13,142 +15,142 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error
 import matplotlib.pyplot as plt
 from statsmodels.tsa.arima.model import ARIMA
 
-st.title("Stock Price Prediction with Multiple Ensembles")
+# -------------------------------
+# 1. Streamlit Header
+# -------------------------------
+st.title("Stock Price Prediction: Transformer + ARIMA Ensemble")
+st.markdown("Combining deep learning (Transformer) with classical time series (ARIMA)")
 
-# --- PARAMETERS ---
-stock_symbol = st.text_input("Stock Symbol", "AAPL")
-start_date = st.date_input("Start Date", pd.to_datetime("2013-01-01"))
-end_date = st.date_input("End Date", pd.to_datetime("2025-01-01"))
-window_size = st.number_input("Window Size (sequence length)", min_value=3, max_value=50, value=10, step=1)
-epochs = st.slider("Training Epochs", 1, 100, 20)
-batch_size = st.number_input("Batch Size", min_value=8, max_value=256, value=64, step=8)
+# -------------------------------
+# 2. Download and prepare data
+# -------------------------------
+symbol = st.sidebar.text_input("Enter Stock Symbol", value="AAME")
+data = yf.download(symbol, start='2013-01-01', end='2023-01-01', auto_adjust=True)
 
-# --- LOAD DATA ---
-@st.cache_data
-def load_data(symbol, start, end):
-    data = yf.download(symbol, start=start, end=end)
-    return data['Close'].values
-
-prices = load_data(stock_symbol, start_date, end_date)
-if len(prices) < window_size + 10:
-    st.error("Not enough data to create sequences. Please choose different dates or stock.")
+if data.empty:
+    st.error("No data found. Please enter a valid stock symbol.")
     st.stop()
 
-# --- CREATE SEQUENCES ---
-def create_sequences(data, window):
+features = data[['Open', 'High', 'Low']]
+target = data['Close']
+
+def create_sequences(features, targets, window=10):
     X, y = [], []
-    for i in range(len(data) - window):
-        X.append(data[i:i + window])
-        y.append(data[i + window])
+    for i in range(len(features) - window):
+        X.append(features.iloc[i:i + window].values.flatten())
+        y.append(targets.iloc[i + window])
     return np.array(X), np.array(y)
 
-X, y = create_sequences(prices, window_size)
+X, y = create_sequences(features, target, window=10)
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# --- SCALE DATA ---
-scaler_X = StandardScaler()
-scaler_y = StandardScaler()
-X_train_scaled = scaler_X.fit_transform(X_train.reshape(-1, window_size))
-X_test_scaled = scaler_X.transform(X_test.reshape(-1, window_size))
-y_train_scaled = scaler_y.fit_transform(y_train.reshape(-1, 1)).flatten()
-y_test_scaled = scaler_y.transform(y_test.reshape(-1, 1)).flatten()
-X_train_scaled = X_train_scaled.reshape(-1, window_size, 1)
-X_test_scaled = X_test_scaled.reshape(-1, window_size, 1)
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
 
-# --- TRANSFORMER MODEL ---
+# -------------------------------
+# 3. Define Transformer Model
+# -------------------------------
 class TransformerModel(nn.Module):
-    def __init__(self, input_dim=1, num_layers=1, num_heads=1, ffn_hid_dim=128):
+    def __init__(self, input_dim, num_features, num_layers=1, num_heads=1, ffn_hid_dim=128):
         super().__init__()
-        self.model_dim = input_dim
-        self.pos_encoder = nn.Linear(input_dim, self.model_dim)
+        self.pos_encoder = nn.Linear(num_features, input_dim)
         self.transformer_encoder = nn.TransformerEncoder(
-            nn.TransformerEncoderLayer(d_model=self.model_dim, nhead=num_heads, dim_feedforward=ffn_hid_dim),
+            nn.TransformerEncoderLayer(d_model=input_dim, nhead=num_heads, dim_feedforward=ffn_hid_dim, batch_first=True),
             num_layers=num_layers)
-        self.fc_out = nn.Linear(self.model_dim, 1)
+        self.fc_out = nn.Linear(input_dim, 1)
 
     def forward(self, x):
+        x = x.view(-1, 10, x.size(1) // 10)
         x = self.pos_encoder(x)
-        x = x * np.sqrt(self.model_dim)
-        x = x.permute(1, 0, 2)
         x = self.transformer_encoder(x)
-        x = x.permute(1, 0, 2)
-        return self.fc_out(x[:, -1, :]).squeeze(-1)
+        x = self.fc_out(x[:, -1, :])
+        return x.view(-1, 1)
 
-model = TransformerModel(input_dim=1)
-criterion = nn.MSELoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001)
+# -------------------------------
+# 4. Train Transformer
+# -------------------------------
+@st.cache_data(show_spinner=False)
+def train_transformer_model(X_train_scaled, y_train):
+    input_dim = 64
+    num_features = X_train_scaled.shape[1] // 10
+    model = TransformerModel(input_dim=input_dim, num_features=num_features)
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    criterion = nn.MSELoss()
+    dataset = TensorDataset(torch.tensor(X_train_scaled, dtype=torch.float32), torch.tensor(y_train, dtype=torch.float32))
+    loader = DataLoader(dataset, batch_size=64, shuffle=True)
 
-X_train_tensor = torch.tensor(X_train_scaled, dtype=torch.float32)
-y_train_tensor = torch.tensor(y_train_scaled, dtype=torch.float32)
-train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
-train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-
-loss_progress = []
-
-def train_model(model, loader, optimizer, criterion, epochs):
     model.train()
-    epoch_display = st.empty()
-    for epoch in range(epochs):
-        total_loss = 0
+    for epoch in range(50):
         for inputs, targets in loader:
             optimizer.zero_grad()
             outputs = model(inputs)
-            loss = criterion(outputs, targets)
+            targets = targets.view(-1)
+            loss = criterion(outputs, targets.view(-1, 1))
             loss.backward()
             optimizer.step()
-            total_loss += loss.item()
-        avg_loss = total_loss / len(loader)
-        loss_progress.append(avg_loss)
-        epoch_display.text(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.6f}")
 
-if st.button("Train Model"):
-    train_model(model, train_loader, optimizer, criterion, epochs)
+    return model
 
-    model.eval()
-    X_test_tensor = torch.tensor(X_test_scaled, dtype=torch.float32)
-    with torch.no_grad():
-        transformer_preds_scaled = model(X_test_tensor).numpy()
+with st.spinner("Training Transformer..."):
+    transformer_model = train_transformer_model(X_train_scaled, y_train)
 
-    transformer_preds = scaler_y.inverse_transform(transformer_preds_scaled.reshape(-1, 1)).flatten()
+transformer_model.eval()
+with torch.no_grad():
+    transformer_preds = transformer_model(torch.tensor(X_test_scaled, dtype=torch.float32)).numpy().ravel()
 
-    linear_model = LinearRegression()
-    linear_model.fit(X_train_scaled.reshape(-1, window_size), y_train_scaled)
-    linear_preds_scaled = linear_model.predict(X_test_scaled.reshape(-1, window_size))
-    linear_preds = scaler_y.inverse_transform(linear_preds_scaled.reshape(-1, 1)).flatten()
-
+# -------------------------------
+# 5. ARIMA Forecast
+# -------------------------------
+with st.spinner("Fitting ARIMA model..."):
     arima_model = ARIMA(y_train, order=(2, 1, 0))
     arima_fitted = arima_model.fit()
     arima_preds = arima_fitted.forecast(steps=len(y_test)).ravel()
 
-    ensemble_avg_preds = (transformer_preds + linear_preds) / 2
-    ensemble_arima_preds = (0.2 * transformer_preds) + (0.8 * arima_preds)
+# -------------------------------
+# 6. Ensemble Predictions
+# -------------------------------
+transformer_weight = 0.20
+arima_weight = 0.80
+ensemble_preds = (transformer_preds * transformer_weight) + (arima_preds * arima_weight)
 
-    def show_metrics(name, y_true, y_pred):
-        mse = mean_squared_error(y_true, y_pred)
-        mae = mean_absolute_error(y_true, y_pred)
-        rmse = np.sqrt(mse)
-        mape = np.mean(np.abs((y_true - y_pred) / y_true)) * 100
-        st.write(f"**{name} MSE:** {mse:.4f}")
-        st.write(f"**{name} MAE:** {mae:.4f}")
-        st.write(f"**{name} RMSE:** {rmse:.4f}")
-        st.write(f"**{name} MAPE:** {mape:.2f}%")
+# -------------------------------
+# 7. Evaluation Metrics
+# -------------------------------
+mse = mean_squared_error(y_test, ensemble_preds)
+mae = mean_absolute_error(y_test, ensemble_preds)
+rmse = np.sqrt(mse)
+mape = np.mean(np.abs((y_test - ensemble_preds) / y_test)) * 100
 
-    show_metrics("Ensemble (Transformer + Linear)", y_test, ensemble_avg_preds)
-    show_metrics("Ensemble (Transformer + ARIMA)", y_test, ensemble_arima_preds)
+st.subheader("Model Evaluation")
+st.markdown(f"""
+- **MSE:** {mse:.4f}  
+- **MAE:** {mae:.4f}  
+- **RMSE:** {rmse:.4f}  
+- **MAPE:** {mape:.2f}%
+""")
 
-    fig, ax = plt.subplots(figsize=(10, 5))
-    ax.plot(y_test, label='Actual Prices', color='blue')
-    ax.plot(ensemble_avg_preds, label='Transformer + Linear', color='red')
-    ax.plot(ensemble_arima_preds, label='Transformer + ARIMA', color='green')
-    ax.set_title(f"Actual vs Ensemble Predictions for {stock_symbol}")
-    ax.set_xlabel("Test Sample Index")
-    ax.set_ylabel("Price")
-    ax.legend()
-    st.pyplot(fig)
+# -------------------------------
+# 8. Plots
+# -------------------------------
+st.subheader("📈 Predictions vs Actual")
 
-    fig2, ax2 = plt.subplots()
-    ax2.plot(loss_progress, label="Training Loss")
-    ax2.set_title("Training Loss Over Epochs")
-    ax2.set_xlabel("Epoch")
-    ax2.set_ylabel("Loss")
-    st.pyplot(fig2)
+# Plot 1 - Transformer only
+fig1, ax1 = plt.subplots(figsize=(10, 4))
+ax1.plot(y_test, label='Actual Prices', color='blue')
+ax1.plot(transformer_preds, label='Transformer Predictions', color='green')
+ax1.set_title("Transformer vs Actual")
+ax1.set_xlabel("Index")
+ax1.set_ylabel("Price")
+ax1.legend()
+st.pyplot(fig1)
+
+# Plot 2 - Ensemble
+fig2, ax2 = plt.subplots(figsize=(10, 4))
+ax2.plot(y_test, label='Actual Prices', color='blue')
+ax2.plot(ensemble_preds, label='Ensemble (Transformer + ARIMA)', color='red')
+ax2.set_title("Ensemble vs Actual")
+ax2.set_xlabel("Index")
+ax2.set_ylabel("Price")
+ax2.legend()
+st.pyplot(fig2)

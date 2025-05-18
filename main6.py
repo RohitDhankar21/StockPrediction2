@@ -1,17 +1,18 @@
 import streamlit as st
-import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
+import pandas as pd
 import yfinance as yf
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, mean_absolute_error
+import matplotlib.pyplot as plt
 
-# Transformer Model Definition
+# --- Transformer Model Definition ---
 class TransformerModel(nn.Module):
     def __init__(self, input_dim, num_layers=1, num_heads=1, ffn_hid_dim=128):
         super().__init__()
@@ -24,124 +25,133 @@ class TransformerModel(nn.Module):
 
     def forward(self, x):
         x = self.pos_encoder(x)
-        x = x * np.sqrt(self.model_dim)
-        x = x.permute(1, 0, 2)
+        x = x * np.sqrt(self.model_dim)  # Scale embedding
+        x = x.permute(1, 0, 2)  # [seq_len, batch_size, features]
         x = self.transformer_encoder(x)
-        x = x.permute(1, 0, 2)
+        x = x.permute(1, 0, 2)  # back to [batch_size, seq_len, features]
         return self.fc_out(x[:, -1, :]).squeeze(-1)
 
-# Training function
-def train_model(model, train_loader, optimizer, criterion, epochs=100):
-    model.train()
-    training_loss_list = []
-    for epoch in range(epochs):
-        total_loss = 0
-        for inputs, targets in train_loader:
-            optimizer.zero_grad()
-            outputs = model(inputs)
-            loss = criterion(outputs, targets)
-            loss.backward()
-            optimizer.step()
-            total_loss += loss.item()
-        avg_loss = total_loss / len(train_loader)
-        training_loss_list.append(avg_loss)
-    return training_loss_list
+# --- Utility to create sequences ---
+def create_sequences(data, window):
+    X, y = [], []
+    for i in range(len(data) - window):
+        X.append(data[i:i + window])
+        y.append(data[i + window])
+    return np.array(X), np.array(y)
 
-# Streamlit app main
+# --- Main Streamlit app ---
 def main():
     st.title("Stock Price Prediction: Transformer + Linear Regression Ensemble")
 
-    selected_ticker = st.text_input("Enter Stock Ticker", "AAPL").upper()
-    window_size = st.slider("Window Size (days)", 5, 30, 10)
-    epochs = st.slider("Training Epochs", 5, 50, 20)
-    batch_size = st.slider("Batch Size", 16, 128, 64)
+    # Sidebar inputs
+    stock_symbol = st.sidebar.text_input("Stock Symbol", value="AAME")
+    start_date = st.sidebar.date_input("Start Date", value=pd.to_datetime("2013-01-01"))
+    end_date = st.sidebar.date_input("End Date", value=pd.to_datetime("2025-01-01"))
+    window_size = st.sidebar.slider("Window Size (days)", min_value=5, max_value=30, value=10)
+    epochs = st.sidebar.slider("Training Epochs", min_value=1, max_value=50, value=20)
 
-    if st.button("Run Prediction"):
-        data = yf.download(selected_ticker, start='2013-01-01', end='2025-01-01')
-        if data.empty:
-            st.error("No data found for this ticker.")
-            return
+    if start_date >= end_date:
+        st.error("Error: End Date must be after Start Date.")
+        return
 
-        prices = data['Close'].values
+    # Fetch data
+    with st.spinner(f"Downloading data for {stock_symbol} ..."):
+        data = yf.download(stock_symbol, start=start_date, end=end_date)
+    if data.empty:
+        st.error("No data found for this stock and date range.")
+        return
 
-        # Create sequences
-        def create_sequences(data, window):
-            X, y = [], []
-            for i in range(len(data) - window):
-                X.append(data[i:i + window])
-                y.append(data[i + window])
-            return np.array(X), np.array(y)
+    prices = data['Close'].values
 
-        X, y = create_sequences(prices, window_size)
+    # Prepare data sequences
+    X, y = create_sequences(prices, window_size)
 
-        # Split
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    # Split train/test
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-        # Scale
-        scaler = StandardScaler()
-        X_train_reshaped = X_train.reshape(-1, window_size)
-        X_test_reshaped = X_test.reshape(-1, window_size)
-        X_train_scaled = scaler.fit_transform(X_train_reshaped)
-        X_test_scaled = scaler.transform(X_test_reshaped)
-        X_train_scaled = X_train_scaled.reshape(-1, window_size, 1)
-        X_test_scaled = X_test_scaled.reshape(-1, window_size, 1)
+    # Scale features
+    scaler = StandardScaler()
+    X_train_reshaped = X_train.reshape(-1, window_size)
+    X_test_reshaped = X_test.reshape(-1, window_size)
 
-        # Convert to tensors
-        X_train_tensor = torch.tensor(X_train_scaled, dtype=torch.float32)
-        y_train_tensor = torch.tensor(y_train, dtype=torch.float32)
+    X_train_scaled = scaler.fit_transform(X_train_reshaped)
+    X_test_scaled = scaler.transform(X_test_reshaped)
 
-        train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
-        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    X_train_scaled = X_train_scaled.reshape(-1, window_size, 1)
+    X_test_scaled = X_test_scaled.reshape(-1, window_size, 1)
 
-        # Initialize model
-        transformer_model = TransformerModel(input_dim=1)
-        optimizer = optim.Adam(transformer_model.parameters(), lr=0.001)
-        criterion = nn.MSELoss()
+    # Convert to torch tensors
+    X_train_tensor = torch.tensor(X_train_scaled, dtype=torch.float32)
+    y_train_tensor = torch.tensor(y_train, dtype=torch.float32)
+    X_test_tensor = torch.tensor(X_test_scaled, dtype=torch.float32)
+    y_test_tensor = torch.tensor(y_test, dtype=torch.float32)
 
-        # Train model
-        training_loss_list = train_model(transformer_model, train_loader, optimizer, criterion, epochs=epochs)
+    # DataLoader
+    train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
+    train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
 
-        # Train linear regression
-        linear_model = LinearRegression().fit(X_train_scaled.reshape(-1, window_size), y_train)
+    # Initialize model, optimizer, criterion
+    model = TransformerModel(input_dim=1)
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    criterion = nn.MSELoss()
+
+    # Train button
+    if st.button("Train Transformer Model"):
+        loss_placeholder = st.empty()
+        model.train()
+        for epoch in range(epochs):
+            total_loss = 0
+            for inputs, targets in train_loader:
+                optimizer.zero_grad()
+                outputs = model(inputs)
+                loss = criterion(outputs, targets)
+                loss.backward()
+                optimizer.step()
+                total_loss += loss.item()
+            avg_loss = total_loss / len(train_loader)
+            # Update the same text line on Streamlit
+            loss_placeholder.text(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.6f}")
+
+        st.success("Training completed!")
+
+        # Train Linear Regression
+        linear_model = LinearRegression()
+        linear_model.fit(X_train_scaled.reshape(-1, window_size), y_train)
 
         # Predictions
-        transformer_model.eval()
-        X_test_tensor = torch.tensor(X_test_scaled, dtype=torch.float32)
+        model.eval()
         with torch.no_grad():
-            transformer_preds = transformer_model(X_test_tensor).numpy()
-
+            transformer_preds = model(X_test_tensor).numpy()
         linear_preds = linear_model.predict(X_test_scaled.reshape(-1, window_size))
 
         # Ensemble average
         ensemble_preds = (transformer_preds + linear_preds) / 2
 
-        # Metrics
+        # Evaluation metrics
         mse = mean_squared_error(y_test, ensemble_preds)
         mae = mean_absolute_error(y_test, ensemble_preds)
         rmse = np.sqrt(mse)
         mape = np.mean(np.abs((y_test - ensemble_preds) / y_test)) * 100
 
-        st.subheader(f"{selected_ticker} Ensemble Model Performance:")
-        st.write(f"MSE: {mse:.4f}")
-        st.write(f"MAE: {mae:.4f}")
-        st.write(f"RMSE: {rmse:.4f}")
-        st.write(f"MAPE: {mape:.2f}%")
+        st.write(f"**Ensemble Metrics:**")
+        st.write(f"- MSE: {mse:.4f}")
+        st.write(f"- MAE: {mae:.4f}")
+        st.write(f"- RMSE: {rmse:.4f}")
+        st.write(f"- MAPE: {mape:.2f}%")
 
-        # Plot actual vs predicted
-        st.subheader("Ensemble Prediction vs Actual Closing Price")
+        # Plot actual vs predicted with label
         fig, ax = plt.subplots(figsize=(12, 6))
         ax.plot(y_test, label="Actual Close Price")
         ax.plot(ensemble_preds, label="Ensemble Prediction")
-        ax.set_title(f"{selected_ticker} - Actual vs Ensemble Predicted Close Price")
+
+        # Label above the plot
+        ax.text(0.5, 1.02, "Ensemble Prediction vs Actual Close Price",
+                transform=ax.transAxes, ha='center', fontsize=14, fontweight='bold')
+
         ax.set_xlabel("Test Sample Index")
         ax.set_ylabel("Price")
         ax.legend()
         st.pyplot(fig)
-
-        # Show training loss logs inside an expander
-        with st.expander("Show Training Loss Logs"):
-            for epoch_idx, loss_val in enumerate(training_loss_list):
-                st.write(f"Epoch {epoch_idx + 1}/{epochs}, Loss: {loss_val:.4f}")
 
 if __name__ == "__main__":
     main()

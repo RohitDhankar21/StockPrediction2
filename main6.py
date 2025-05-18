@@ -13,7 +13,7 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error
 import matplotlib.pyplot as plt
 from statsmodels.tsa.arima.model import ARIMA
 
-st.title("Stock Price Prediction with Transformer + Linear Regression + ARIMA Ensemble")
+st.title("Stock Price Prediction with Transformer + ARIMA Ensemble")
 
 # --- PARAMETERS ---
 stock_symbol = st.text_input("Stock Symbol", "AAPL")
@@ -26,7 +26,7 @@ batch_size = st.number_input("Batch Size", min_value=8, max_value=256, value=64,
 # --- LOAD DATA ---
 @st.cache_data
 def load_data(symbol, start, end):
-    data = yf.download(symbol, start=start, end=end)
+    data = yf.download(symbol, start=start, end=end, auto_adjust=True)
     return data['Close'].values
 
 prices = load_data(stock_symbol, start_date, end_date)
@@ -51,11 +51,15 @@ X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_
 scaler_X = StandardScaler()
 scaler_y = StandardScaler()
 
+# Scale X (flatten first then reshape)
 X_train_scaled = scaler_X.fit_transform(X_train.reshape(-1, window_size))
 X_test_scaled = scaler_X.transform(X_test.reshape(-1, window_size))
+
+# Scale y separately
 y_train_scaled = scaler_y.fit_transform(y_train.reshape(-1, 1)).flatten()
 y_test_scaled = scaler_y.transform(y_test.reshape(-1, 1)).flatten()
 
+# Reshape back to 3D for transformer input
 X_train_scaled = X_train_scaled.reshape(-1, window_size, 1)
 X_test_scaled = X_test_scaled.reshape(-1, window_size, 1)
 
@@ -73,25 +77,28 @@ class TransformerModel(nn.Module):
     def forward(self, x):
         x = self.pos_encoder(x)
         x = x * np.sqrt(self.model_dim)
-        x = x.permute(1, 0, 2)
+        x = x.permute(1, 0, 2)  # [seq_len, batch, features]
         x = self.transformer_encoder(x)
-        x = x.permute(1, 0, 2)
+        x = x.permute(1, 0, 2)  # [batch, seq_len, features]
         return self.fc_out(x[:, -1, :]).squeeze(-1)
 
+# Initialize model, criterion, optimizer
 model = TransformerModel(input_dim=1)
 criterion = nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
+# Prepare data tensors and dataloader
 X_train_tensor = torch.tensor(X_train_scaled, dtype=torch.float32)
 y_train_tensor = torch.tensor(y_train_scaled, dtype=torch.float32)
 train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
 train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
+# --- TRAINING ---
 loss_progress = []
 
 def train_model(model, loader, optimizer, criterion, epochs):
     model.train()
-    epoch_display = st.empty()
+    epoch_display = st.empty()  # placeholder to update the line
 
     for epoch in range(epochs):
         total_loss = 0
@@ -104,36 +111,36 @@ def train_model(model, loader, optimizer, criterion, epochs):
             total_loss += loss.item()
         avg_loss = total_loss / len(loader)
         loss_progress.append(avg_loss)
-        epoch_display.text(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.6f}")
+        epoch_display.text(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.6f}")  # update single line
 
 train_button = st.button("Train Model")
 if train_button:
     train_model(model, train_loader, optimizer, criterion, epochs)
 
+    # --- PREDICTIONS ---
     model.eval()
     X_test_tensor = torch.tensor(X_test_scaled, dtype=torch.float32)
     with torch.no_grad():
         transformer_preds_scaled = model(X_test_tensor).numpy()
 
+    # Inverse transform to original scale
     transformer_preds = scaler_y.inverse_transform(transformer_preds_scaled.reshape(-1, 1)).flatten()
 
-    linear_model = LinearRegression()
-    linear_model.fit(X_train_scaled.reshape(-1, window_size), y_train_scaled)
-    linear_preds_scaled = linear_model.predict(X_test_scaled.reshape(-1, window_size))
-    linear_preds = scaler_y.inverse_transform(linear_preds_scaled.reshape(-1, 1)).flatten()
-
-    # --- ARIMA MODEL ---
+    # ARIMA model on training target data (original scale)
     arima_model = ARIMA(y_train, order=(2, 1, 0))
     arima_fitted = arima_model.fit()
-    arima_preds = arima_fitted.forecast(steps=len(y_test)).ravel()
 
-    # --- ENSEMBLE PREDICTIONS ---
-    transformer_weight = 0.2
-    arima_weight = 0.8
-    transformer_preds = transformer_preds.ravel()
-    arima_preds = arima_preds.ravel()
-    ensemble_preds = (transformer_weight * transformer_preds) + (arima_weight * arima_preds)
+    # Forecast with ARIMA on test set length
+    arima_preds = arima_fitted.forecast(steps=len(y_test))
 
+    # --- ENSEMBLE (Weighted Average) ---
+    transformer_weight = 0.20
+    arima_weight = 0.80
+    assert abs(transformer_weight + arima_weight - 1) < 1e-6, "Weights must sum to 1."
+
+    ensemble_preds = (transformer_preds * transformer_weight) + (arima_preds * arima_weight)
+
+    # --- METRICS ---
     mse = mean_squared_error(y_test, ensemble_preds)
     mae = mean_absolute_error(y_test, ensemble_preds)
     rmse = np.sqrt(mse)
@@ -144,20 +151,30 @@ if train_button:
     st.write(f"**Ensemble RMSE:** {rmse:.4f}")
     st.write(f"**Ensemble MAPE:** {mape:.2f}%")
 
-    ensemble_name = "Transformer + ARIMA (Weighted Ensemble)"
+    # --- PLOT RESULTS ---
 
-    fig, ax = plt.subplots(figsize=(10, 5))
-    ax.plot(y_test, label='Actual Prices', color='blue')
-    ax.plot(ensemble_preds, label='Ensemble Predictions', color='red')
-    ax.set_title(f"Actual vs Predicted Closing Prices for {stock_symbol}\n({ensemble_name})")
-    ax.set_xlabel("Test Sample Index")
-    ax.set_ylabel("Price")
-    ax.legend()
-    st.pyplot(fig)
+    # Plot Actual Prices separately
+    fig_actual, ax_actual = plt.subplots(figsize=(10, 5))
+    ax_actual.plot(y_test, label='Actual Prices', color='blue')
+    ax_actual.set_title(f"Actual Closing Prices for {stock_symbol}")
+    ax_actual.set_xlabel("Test Sample Index")
+    ax_actual.set_ylabel("Price")
+    ax_actual.legend()
+    st.pyplot(fig_actual)
 
-    fig2, ax2 = plt.subplots()
-    ax2.plot(loss_progress, label="Training Loss")
-    ax2.set_title("Training Loss Over Epochs")
-    ax2.set_xlabel("Epoch")
-    ax2.set_ylabel("Loss")
-    st.pyplot(fig2)
+    # Plot Ensemble Predictions separately
+    fig_pred, ax_pred = plt.subplots(figsize=(10, 5))
+    ax_pred.plot(ensemble_preds, label='Ensemble Predictions', color='red')
+    ax_pred.set_title(f"Ensemble Predictions for {stock_symbol}\n(Transformer + ARIMA)")
+    ax_pred.set_xlabel("Test Sample Index")
+    ax_pred.set_ylabel("Price")
+    ax_pred.legend()
+    st.pyplot(fig_pred)
+
+    # Plot training loss curve
+    fig_loss, ax_loss = plt.subplots()
+    ax_loss.plot(loss_progress, label="Training Loss")
+    ax_loss.set_title("Training Loss Over Epochs")
+    ax_loss.set_xlabel("Epoch")
+    ax_loss.set_ylabel("Loss")
+    st.pyplot(fig_loss)

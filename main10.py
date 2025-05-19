@@ -38,11 +38,15 @@ features = df[['Open', 'High', 'Low']]
 target = df['Close']
 
 def create_sequences(features, targets, window=10):
-    X, y = [], []
+    X, y, dates = [], [], []
     for i in range(len(features) - window):
-        X.append(features.iloc[i:i + window].values.flatten())  # 3*window features
+        X.append(features.iloc[i:i + window].values.flatten())
         y.append(targets.iloc[i + window])
-    return np.array(X), np.array(y)
+        dates.append(targets.index[i + window])  # index aligned with y
+    return np.array(X), np.array(y), np.array(dates)
+
+
+X, y, dates = create_sequences(features, target, window_size)
 
 X_train, X_test, y_train, y_test, dates_train, dates_test = train_test_split(
     X, y, dates, test_size=0.2, random_state=42)

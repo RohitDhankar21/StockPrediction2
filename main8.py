@@ -13,7 +13,7 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error
 import matplotlib.pyplot as plt
 from statsmodels.tsa.arima.model import ARIMA
 
-st.title("Stock Price Prediction with Transformer + Linear Regression Ensemble")
+st.title("Stock Price Prediction Ensemble Learning")
 
 # --- PARAMETERS ---
 stock_symbol = st.text_input("Stock Symbol", "AAPL")

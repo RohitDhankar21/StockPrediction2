@@ -149,3 +149,4 @@ if train_button:
     ax2.set_ylabel("Loss")
     ax2.set_title("Transformer Training Loss")
     st.pyplot(fig2)
+    

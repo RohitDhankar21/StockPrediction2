@@ -60,45 +60,33 @@ target = df['Close']
 def create_sequences(features, targets, window=10):
     X, y = [], []
     for i in range(len(features) - window):
-        X.append(features.iloc[i:i + window].values)  # keep shape (window, features)
+        X.append(features.iloc[i:i + window].values.flatten())
         y.append(targets.iloc[i + window])
     return np.array(X), np.array(y)
 
 X, y = create_sequences(features, target, window_size)
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# Scale features
-feature_scaler = StandardScaler()
-# Flatten X_train and X_test to fit scaler (samples * window, features), then reshape back
-X_train_2d = X_train.reshape(-1, X_train.shape[2])
-X_test_2d = X_test.reshape(-1, X_test.shape[2])
-
-X_train_2d_scaled = feature_scaler.fit_transform(X_train_2d)
-X_test_2d_scaled = feature_scaler.transform(X_test_2d)
-
-X_train_scaled = X_train_2d_scaled.reshape(X_train.shape)
-X_test_scaled = X_test_2d_scaled.reshape(X_test.shape)
-
-# Scale target
-target_scaler = StandardScaler()
-y_train_scaled = target_scaler.fit_transform(y_train.reshape(-1, 1)).flatten()
-y_test_scaled = target_scaler.transform(y_test.reshape(-1, 1)).flatten()
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
 
 # --- TRANSFORMER MODEL ---
 class TransformerModel(nn.Module):
-    def __init__(self, input_dim, num_layers=1, num_heads=1, ffn_hid_dim=128):
+    def __init__(self, input_dim, num_features, num_layers=1, num_heads=1, ffn_hid_dim=128):
         super().__init__()
-        self.pos_encoder = nn.Linear(input_dim, input_dim)
+        self.pos_encoder = nn.Linear(num_features, input_dim)
         self.transformer_encoder = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(d_model=input_dim, nhead=num_heads, dim_feedforward=ffn_hid_dim, batch_first=True),
             num_layers=num_layers)
         self.fc_out = nn.Linear(input_dim, 1)
 
     def forward(self, x):
+        x = x.view(-1, window_size, x.size(1) // window_size)
         x = self.pos_encoder(x)
         x = self.transformer_encoder(x)
         x = self.fc_out(x[:, -1, :])
-        return x  # shape: (batch_size, 1)
+        return x.squeeze(-1)
 
 # --- TRAIN FUNCTION ---
 def train_transformer(model, X_train, y_train, epochs=20, lr=0.001):
@@ -108,11 +96,10 @@ def train_transformer(model, X_train, y_train, epochs=20, lr=0.001):
     loader = DataLoader(TensorDataset(torch.tensor(X_train, dtype=torch.float32),
                                       torch.tensor(y_train, dtype=torch.float32)),
                         batch_size=batch_size, shuffle=True)
-
-    progress_bar = st.progress(0)          # Progress bar starting at 0%
-    status_text = st.empty()               # Placeholder for epoch text
-    
     losses = []
+    progress_text = st.empty()  # For displaying progress bar text
+    progress_bar = st.progress(0)  # Progress bar widget
+
     for epoch in range(epochs):
         total_loss = 0
         for x_batch, y_batch in loader:
@@ -124,11 +111,11 @@ def train_transformer(model, X_train, y_train, epochs=20, lr=0.001):
             total_loss += loss.item()
         avg_loss = total_loss / len(loader)
         losses.append(avg_loss)
-        
-        # Update progress bar and text after each epoch
+
+        # Update progress bar and text
         progress_bar.progress((epoch + 1) / epochs)
-        status_text.text(f"Training epoch {epoch + 1} / {epochs} — Loss: {avg_loss:.4f}")
-        
+        progress_text.text(f"Training Epoch {epoch + 1} / {epochs} - Loss: {avg_loss:.4f}")
+
     return losses
 
 # --- TRAINING ---
@@ -136,31 +123,25 @@ st.markdown("### 🚀 Train the Ensemble Model")
 train_button = st.button("Start Training")
 
 if train_button:
-    input_dim = X_train.shape[2]  # Number of features
+    input_dim = 64
+    num_features = X_train.shape[1] // window_size
 
     # Train Transformer
-    transformer = TransformerModel(input_dim=input_dim)
-    train_loss = train_transformer(transformer, X_train_scaled, y_train_scaled, epochs=epochs)
+    transformer = TransformerModel(input_dim=input_dim, num_features=num_features)
+    train_loss = train_transformer(transformer, X_train_scaled, y_train, epochs=epochs)
 
-    # Predictions (scaled)
+    # Predictions
     transformer.eval()
     with torch.no_grad():
-        transformer_preds_test_scaled = transformer(torch.tensor(X_test_scaled, dtype=torch.float32)).numpy().flatten()
-        transformer_preds_train_scaled = transformer(torch.tensor(X_train_scaled, dtype=torch.float32)).numpy().flatten()
+        transformer_preds_test = transformer(torch.tensor(X_test_scaled, dtype=torch.float32)).numpy()
+        transformer_preds_train = transformer(torch.tensor(X_train_scaled, dtype=torch.float32)).numpy()
 
-    # Inverse scale transformer predictions
-    transformer_preds_test = target_scaler.inverse_transform(transformer_preds_test_scaled.reshape(-1, 1)).flatten()
-    transformer_preds_train = target_scaler.inverse_transform(transformer_preds_train_scaled.reshape(-1, 1)).flatten()
-
-    # Linear Regression on flattened scaled features
     linear_model = LinearRegression()
-    X_train_flat = X_train_scaled.reshape(X_train_scaled.shape[0], -1)
-    X_test_flat = X_test_scaled.reshape(X_test_scaled.shape[0], -1)
-    linear_model.fit(X_train_flat, y_train)
-    lr_preds_train = linear_model.predict(X_train_flat)
-    lr_preds_test = linear_model.predict(X_test_flat)
+    linear_model.fit(X_train_scaled, y_train)
+    lr_preds_test = linear_model.predict(X_test_scaled)
+    lr_preds_train = linear_model.predict(X_train_scaled)
 
-    # Stacking predictions
+    # Stacking
     stacked_train = np.column_stack((lr_preds_train, transformer_preds_train))
     stacked_test = np.column_stack((lr_preds_test, transformer_preds_test))
     final_model = LinearRegression()
@@ -181,12 +162,20 @@ if train_button:
     col2.metric("MAE", f"{mae:.4f}")
     col2.metric("MAPE", f"{mape:.2f}%")
 
+    # --- GRAPH EXPLANATION ---
+    st.markdown("""
+    ### 📈 Actual vs Predicted Prices
+    
+    The blue line shows the actual closing prices of the stock in the test period.  
+    The orange dashed line represents the predicted prices from our **stacked ensemble model** combining Transformer and Linear Regression.  
+    This comparison helps evaluate how well our model forecasts stock prices based on historical data.
+    """)
+
     # --- PLOT PREDICTIONS ---
-    st.markdown("### 📈 Actual vs Predicted Prices")
     fig, ax = plt.subplots(figsize=(10, 5))
     ax.plot(y_test, label="Actual", color='blue', linewidth=2)
-    ax.plot(y_pred, label="Stacked Prediction", color='yellow')
-    ax.set_title(f"{stock_symbol} - Actual vs Predicted Close Prices")
+    ax.plot(y_pred, label="Stacked Prediction", color='orange', linestyle='--')
+    ax.set_title(f"{stock_symbol.upper()} - Actual vs Predicted Close Prices")
     ax.legend()
     ax.grid(True)
     st.pyplot(fig)
@@ -200,3 +189,26 @@ if train_button:
     ax2.set_title("Transformer Training Loss Curve")
     ax2.grid(True)
     st.pyplot(fig2)
+
+    # --- NEXT DAY PREDICTION ---
+    st.markdown("### 🔮 Predict Next Day Closing Price")
+
+    # Take last window_size days of features, flatten, and scale
+    last_window_features = features.iloc[-window_size:].values.flatten().reshape(1, -1)
+    last_window_scaled = scaler.transform(last_window_features)
+
+    # Prepare tensor input for Transformer
+    last_window_tensor = torch.tensor(last_window_scaled, dtype=torch.float32)
+
+    # Get predictions from individual models
+    transformer.eval()
+    with torch.no_grad():
+        transformer_pred_next = transformer(last_window_tensor).numpy()
+
+    lr_pred_next = linear_model.predict(last_window_scaled)
+
+    # Stack and predict final ensemble output
+    stacked_next = np.column_stack((lr_pred_next, transformer_pred_next))
+    next_day_price = final_model.predict(stacked_next)[0]
+
+    st.write(f"Predicted next day closing price for **{stock_symbol.upper()}**: **${next_day_price:.2f}**")

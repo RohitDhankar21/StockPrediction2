@@ -77,6 +77,8 @@ def train_transformer(model, X_train, y_train, epochs=20, lr=0.001):
                                       torch.tensor(y_train, dtype=torch.float32)),
                         batch_size=batch_size, shuffle=True)
     losses = []
+    status_text = st.empty()  # Placeholder for dynamic updates
+
     for epoch in range(epochs):
         total_loss = 0
         for x_batch, y_batch in loader:
@@ -86,8 +88,13 @@ def train_transformer(model, X_train, y_train, epochs=20, lr=0.001):
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
+
         avg_loss = total_loss / len(loader)
         losses.append(avg_loss)
+
+        # 👇 Update status on Streamlit
+        status_text.markdown(f"**Epoch {epoch+1}/{epochs} - Loss:** `{avg_loss:.4f}`")
+
     return losses
 
 # --- TRAIN MODELS ---

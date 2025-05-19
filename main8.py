@@ -11,9 +11,8 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 import matplotlib.pyplot as plt
-from statsmodels.tsa.arima.model import ARIMA
 
-st.title("Stock Price Prediction Ensemble Learning")
+st.title("Stock Price Prediction with Transformer + Linear Regression Ensemble")
 
 # --- PARAMETERS ---
 stock_symbol = st.text_input("Stock Symbol", "AAPL")
@@ -70,7 +69,7 @@ class TransformerModel(nn.Module):
         self.model_dim = input_dim
         self.pos_encoder = nn.Linear(input_dim, self.model_dim)
         self.transformer_encoder = nn.TransformerEncoder(
-            nn.TransformerEncoderLayer(d_model=self.model_dim, nhead=num_heads, dim_feedforward=ffn_hid_dim, batch_first=True),
+            nn.TransformerEncoderLayer(d_model=self.model_dim, nhead=num_heads, dim_feedforward=ffn_hid_dim),
             num_layers=num_layers)
         self.fc_out = nn.Linear(self.model_dim, 1)
 
@@ -146,12 +145,6 @@ if train_button:
     st.write(f"**Ensemble RMSE:** {rmse:.4f}")
     st.write(f"**Ensemble MAPE:** {mape:.2f}%")
 
-    
-
-
-
-    
-    
     # --- PLOT RESULTS ---
 
     ensemble_name = "Transformer + Linear Regression (Average Ensemble)"

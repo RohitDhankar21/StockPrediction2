@@ -156,7 +156,7 @@ if train_button:
 
     # --- ARIMA Predictions and Plot ---
     def get_arima_predictions(data, window, test_len):
-        series = pd.Series(data)
+        series = pd.Series(data.flatten())
         train_series = series[:-test_len]
         model = sm.tsa.ARIMA(train_series, order=(5, 1, 0))
         model_fit = model.fit()

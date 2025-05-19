@@ -106,8 +106,12 @@ def train_transformer(model, X_train, y_train, epochs=20, lr=0.001):
     optimizer = optim.Adam(model.parameters(), lr=lr)
     criterion = nn.MSELoss()
     loader = DataLoader(TensorDataset(torch.tensor(X_train, dtype=torch.float32),
-                                      torch.tensor(y_train, dtype=torch.float32).unsqueeze(-1)),
+                                      torch.tensor(y_train, dtype=torch.float32)),
                         batch_size=batch_size, shuffle=True)
+
+    progress_bar = st.progress(0)          # Progress bar starting at 0%
+    status_text = st.empty()               # Placeholder for epoch text
+    
     losses = []
     for epoch in range(epochs):
         total_loss = 0
@@ -120,7 +124,11 @@ def train_transformer(model, X_train, y_train, epochs=20, lr=0.001):
             total_loss += loss.item()
         avg_loss = total_loss / len(loader)
         losses.append(avg_loss)
-        st.write(f"Epoch {epoch+1}/{epochs} - Loss: {avg_loss:.6f}")
+        
+        # Update progress bar and text after each epoch
+        progress_bar.progress((epoch + 1) / epochs)
+        status_text.text(f"Training epoch {epoch + 1} / {epochs} — Loss: {avg_loss:.4f}")
+        
     return losses
 
 # --- TRAINING ---

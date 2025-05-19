@@ -135,27 +135,32 @@ def train_transformer(model, X_train, y_train, epochs=20, lr=0.001):
     return losses
 
 
-# --- FUNCTION TO PREDICT FUTURE PRICES ---
 def predict_future_prices(model, linear_model, scaler, last_known_features, days_to_predict, window_size):
     model.eval()
     predicted_prices = []
-    current_window = last_known_features.copy()  # shape: (window_size * num_features,)
+    current_window = last_known_features.copy()  # shape: (window_size, 3)
 
     for _ in range(days_to_predict):
-        scaled_window = scaler.transform(current_window.reshape(1, -1))
+        # Scale current window (shape: window_size x 3)
+        scaled_window = scaler.transform(current_window)  # shape: (window_size, 3)
+
+        # Add batch dimension for transformer: (1, window_size, 3)
+        input_tensor = torch.tensor(scaled_window, dtype=torch.float32).unsqueeze(0)
+
         with torch.no_grad():
-            trans_pred = model(torch.tensor(scaled_window, dtype=torch.float32)).item()
-        lr_pred = linear_model.predict(scaled_window)[0]
+            trans_pred = model(input_tensor).item()
+        
+        # Linear regression expects flattened input: (1, window_size*3)
+        lr_pred = linear_model.predict(scaled_window.flatten().reshape(1, -1))[0]
+
         final_pred = (trans_pred + lr_pred) / 2
         predicted_prices.append(final_pred)
 
-        # Now update current_window: remove oldest day, append predicted day features
-        # Since we only predict Close price, for simplicity replicate predicted close as Open, High, Low, Close
-        # This is a simplification — ideally you'd have a better method or additional data
+        # Update current window: remove oldest day and add new day features
+        # Since only predicting Close price, approximate Open, High, Low = predicted close price
+        new_day_features = np.array([final_pred, final_pred, final_pred])
 
-        day_features = np.array([final_pred, final_pred, final_pred])  # Open, High, Low approx
-        current_window = np.roll(current_window, -3)  # shift left by 3 features (one day)
-        current_window[-3:] = day_features  # append new day features
+        current_window = np.vstack((current_window[1:], new_day_features))
 
     return predicted_prices
 

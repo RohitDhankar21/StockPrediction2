@@ -150,36 +150,45 @@ if train_button:
     # -------------------------------
     # 5. ARIMA model (on raw unscaled data)
     # -------------------------------
+    from statsmodels.tsa.stattools import adfuller
+
+    # ARIMA section with rolling predictions
+    train_size = int(len(prices) * 0.8)
+    arima_train = prices[:train_size]
+    arima_test = prices[train_size:]
     
-    # Reuse full original price series (before sequence creation)
-    raw_prices = prices  # unscaled
+    # Make sure the series is stationary or use differencing
+    def check_stationarity(series):
+        result = adfuller(series)
+        return result[1]  # p-value
     
-    # Fit ARIMA on the training portion of the original series
-    train_size = int(len(raw_prices) * 0.8)
-    arima_train = raw_prices[:train_size]
-    arima_test = raw_prices[train_size:]
+    p_value = check_stationarity(arima_train)
+    if p_value > 0.05:
+        st.warning("ARIMA input series may not be stationary (ADF p-value > 0.05)")
     
-    # Fit ARIMA model (you can tune order if needed)
-    arima_model = ARIMA(arima_train, order=(5, 1, 2))  # (p,d,q) values can be tuned
-    arima_fitted = arima_model.fit()
+    # Rolling forecast
+    arima_preds = []
+    history = list(arima_train)
     
-    # Forecast the test set length
-    arima_preds = arima_fitted.forecast(steps=len(arima_test)).ravel()
+    for t in range(len(arima_test)):
+        model = ARIMA(history, order=(5, 1, 2))  # Tune these (p,d,q) values
+        model_fit = model.fit()
+        yhat = model_fit.forecast()[0]
+        arima_preds.append(yhat)
+        history.append(arima_test[t])  # Update with actual
     
-    # --- Transformer + ARIMA Weighted Ensemble ---
-    transformer_weight = 0.20
-    arima_weight = 0.80
-    transformer_preds = transformer_preds.flatten()
-    
-    # Align lengths for ensemble (take minimum)
+    # Align lengths
     min_len_arima = min(len(y_test), len(transformer_preds), len(arima_preds))
     y_test_arima = y_test[:min_len_arima]
     transformer_preds = transformer_preds[:min_len_arima]
-    arima_preds = arima_preds[:min_len_arima]
+    arima_preds = np.array(arima_preds[:min_len_arima])
     
+    # Weighted ensemble
+    transformer_weight = 0.2
+    arima_weight = 0.8
     arima_transformer_preds = (transformer_preds * transformer_weight) + (arima_preds * arima_weight)
     
-    # --- METRICS for ARIMA-Transformer Ensemble ---
+    # Metrics
     mse_arima = mean_squared_error(y_test_arima, arima_transformer_preds)
     mae_arima = mean_absolute_error(y_test_arima, arima_transformer_preds)
     rmse_arima = np.sqrt(mse_arima)
@@ -191,7 +200,7 @@ if train_button:
     st.write(f"**RMSE:** {rmse_arima:.4f}")
     st.write(f"**MAPE:** {mape_arima:.2f}%")
     
-    # --- PLOT ARIMA-Transformer Ensemble ---
+    # Plot
     fig3, ax3 = plt.subplots(figsize=(10, 5))
     ax3.plot(y_test_arima, label='Actual Prices', color='blue')
     ax3.plot(arima_transformer_preds, label='Transformer + ARIMA Predictions', color='green')

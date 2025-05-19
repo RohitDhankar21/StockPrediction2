@@ -147,70 +147,9 @@ if train_button:
     st.write(f"**Ensemble MAPE:** {mape:.2f}%")
 
     
-    # -------------------------------
-    # 5. ARIMA model (on raw unscaled data)
-    # -------------------------------
-    from statsmodels.tsa.stattools import adfuller
 
-    
 
-    # ARIMA section with rolling predictions
-    train_size = int(len(prices) * 0.8)
-    arima_train = prices[:train_size]
-    arima_test = prices[train_size:]
-    
-    # Make sure the series is stationary or use differencing
-    def check_stationarity(series):
-        result = adfuller(series)
-        return result[1]  # p-value
-    
-    p_value = check_stationarity(arima_train)
-    if p_value > 0.05:
-        st.warning("ARIMA input series may not be stationary (ADF p-value > 0.05)")
-    
-    # Rolling forecast
-    arima_preds = []
-    history = list(arima_train)
-    
-    for t in range(len(arima_test)):
-        model = ARIMA(df['Close'], order=(5,1,2))  # Tune these (p,d,q) values
-        model_fit = model.fit()
-        yhat = model_fit.forecast()[0]
-        arima_preds.append(yhat)
-        history.append(arima_test[t])  # Update with actual
-    
-    # Align lengths
-    min_len_arima = min(len(y_test), len(transformer_preds), len(arima_preds))
-    y_test_arima = y_test[:min_len_arima]
-    transformer_preds = transformer_preds[:min_len_arima]
-    arima_preds = np.array(arima_preds[:min_len_arima])
-    
-    # Weighted ensemble
-    transformer_weight = 0.2
-    arima_weight = 0.8
-    arima_transformer_preds = (transformer_preds * transformer_weight) + (arima_preds * arima_weight)
-    
-    # Metrics
-    mse_arima = mean_squared_error(y_test_arima, arima_transformer_preds)
-    mae_arima = mean_absolute_error(y_test_arima, arima_transformer_preds)
-    rmse_arima = np.sqrt(mse_arima)
-    mape_arima = np.mean(np.abs((y_test_arima - arima_transformer_preds) / y_test_arima)) * 100
-    
-    st.write(f"### Transformer + ARIMA (Weighted Ensemble)")
-    st.write(f"**MSE:** {mse_arima:.4f}")
-    st.write(f"**MAE:** {mae_arima:.4f}")
-    st.write(f"**RMSE:** {rmse_arima:.4f}")
-    st.write(f"**MAPE:** {mape_arima:.2f}%")
-    
-    # Plot
-    fig3, ax3 = plt.subplots(figsize=(10, 5))
-    ax3.plot(y_test_arima, label='Actual Prices', color='blue')
-    ax3.plot(arima_transformer_preds, label='Transformer + ARIMA Predictions', color='green')
-    ax3.set_title(f"Actual vs Transformer+ARIMA Predictions for {stock_symbol}")
-    ax3.set_xlabel("Test Sample Index")
-    ax3.set_ylabel("Price")
-    ax3.legend()
-    st.pyplot(fig3)
+
     
     
     # --- PLOT RESULTS ---

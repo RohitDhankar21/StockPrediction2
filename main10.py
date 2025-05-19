@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 st.set_page_config(page_title="Stock Predictor", layout="wide")
 
 # --- TITLE ---
-st.title("📈 Stock Price Prediction using Stacked Ensemble")
+st.title("📈 Stock Price Prediction Stacked Ensemble")
 st.markdown("**Transformer + Linear Regression (Stacked Ensemble)** powered by PyTorch, Sklearn, and Streamlit")
 
 st.divider()

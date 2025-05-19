@@ -11,7 +11,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 import matplotlib.pyplot as plt
-import statsmodels.api as sm  # Added for ARIMA
+import statsmodels.api as sm
 
 st.title("Stock Price Prediction with Transformer + Linear Regression Ensemble")
 
@@ -73,10 +73,10 @@ class TransformerModel(nn.Module):
 
     def forward(self, x):
         x = self.pos_encoder(x)
-        x = x * np.sqrt(self.model_dim)
-        x = x.permute(1, 0, 2)
+        x = x * torch.sqrt(torch.tensor(self.model_dim, dtype=torch.float32))
+        x = x.permute(1, 0, 2)  # (seq_len, batch_size, features)
         x = self.transformer_encoder(x)
-        x = x.permute(1, 0, 2)
+        x = x.permute(1, 0, 2)  # (batch_size, seq_len, features)
         return self.fc_out(x[:, -1, :]).squeeze(-1)
 
 model = TransformerModel(input_dim=1)
@@ -107,6 +107,7 @@ def train_model(model, loader, optimizer, criterion, epochs):
         epoch_display.text(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.6f}")
 
 train_button = st.button("Train Model")
+
 if train_button:
     train_model(model, train_loader, optimizer, criterion, epochs)
 
@@ -136,11 +137,10 @@ if train_button:
     st.write(f"**Ensemble MAPE:** {mape:.2f}%")
 
     # --- PLOT RESULTS ---
-    ensemble_name = "Transformer + Linear Regression (Average Ensemble)"
     fig, ax = plt.subplots(figsize=(10, 5))
     ax.plot(y_test, label='Actual Prices', color='blue')
     ax.plot(ensemble_preds, label='Ensemble Predictions', color='red')
-    ax.set_title(f"Actual vs Predicted Closing Prices for {stock_symbol}\n({ensemble_name})")
+    ax.set_title(f"Actual vs Predicted Closing Prices for {stock_symbol}\n(Transformer + Linear Regression Ensemble)")
     ax.set_xlabel("Test Sample Index")
     ax.set_ylabel("Price")
     ax.legend()
@@ -152,18 +152,19 @@ if train_button:
     ax2.set_title("Training Loss Over Epochs")
     ax2.set_xlabel("Epoch")
     ax2.set_ylabel("Loss")
+    ax2.legend()
     st.pyplot(fig2)
 
     # --- ARIMA Predictions and Plot ---
-    def get_arima_predictions(data, window, test_len):
-        series = pd.Series(np.ravel(data))
+    def get_arima_predictions(data, test_len):
+        series = pd.Series(data)
         train_series = series[:-test_len]
         model = sm.tsa.ARIMA(train_series, order=(5, 1, 0))
         model_fit = model.fit()
         forecast = model_fit.forecast(steps=test_len)
         return forecast
 
-    arima_preds = get_arima_predictions(prices, window_size, len(y_test))
+    arima_preds = get_arima_predictions(prices, len(y_test))
 
     fig_arima, ax_arima = plt.subplots(figsize=(10, 5))
     ax_arima.plot(y_test, label='Actual Prices', color='blue')

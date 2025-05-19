@@ -18,12 +18,10 @@ import joblib
 import os
 
 st.set_page_config(page_title="Stacked Stock Prediction", layout="wide")
-
 st.title("Stock Price Prediction with Stacked Transformer + Linear Regression")
 
 # Sidebar
 st.sidebar.header("Settings")
-
 symbol = st.sidebar.text_input("Stock Symbol", "AAPL")
 start_date = st.sidebar.date_input("Start Date", pd.to_datetime("2013-01-01"))
 end_date = st.sidebar.date_input("End Date", pd.to_datetime("2023-01-01"))
@@ -36,7 +34,6 @@ model_dir = "models"
 os.makedirs(model_dir, exist_ok=True)
 
 @st.cache_data
-
 def load_data(symbol, start, end):
     df = yf.download(symbol, start=start, end=end)
     return df[['Open', 'High', 'Low', 'Close']]
@@ -52,7 +49,7 @@ class TransformerModel(nn.Module):
 
     def forward(self, x):
         B = x.size(0)
-        seq_len = 10
+        seq_len = window_size
         feat = x.size(1) // seq_len
         x = x.view(B, seq_len, feat)
         x = self.linear(x)
@@ -100,7 +97,6 @@ if st.button("Train Models"):
             loss.backward()
             optimizer.step()
 
-    # Stack model
     with torch.no_grad():
         tr_train = transformer(torch.tensor(X_train_scaled, dtype=torch.float32)).numpy()
         tr_test = transformer(torch.tensor(X_test_scaled, dtype=torch.float32)).numpy()
@@ -146,6 +142,10 @@ if os.path.exists(model_path) and os.path.exists(transformer_path):
     future_preds = []
     for _ in range(forecast_days):
         seq = recent.values.flatten().reshape(1, -1)
+        if seq.shape[1] != X_train.shape[1]:
+            st.error("Feature mismatch in future prediction.")
+            st.stop()
+
         seq_scaled = scaler.transform(seq)
         with torch.no_grad():
             tr_out = transformer(torch.tensor(seq_scaled, dtype=torch.float32)).numpy()

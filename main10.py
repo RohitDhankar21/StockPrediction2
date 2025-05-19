@@ -11,13 +11,12 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 import matplotlib.pyplot as plt
-from datetime import timedelta
 
 # Set page config
 st.set_page_config(page_title="Stock Predictor", layout="wide")
 
 # --- TITLE ---
-st.title("📈 Stock Price Prediction Stacked Ensemble")
+st.title("📈 Stock Price Prediction using Stacked Ensemble")
 st.markdown("**Transformer + Linear Regression (Stacked Ensemble)** powered by PyTorch, Sklearn, and Streamlit")
 
 st.divider()
@@ -101,8 +100,6 @@ class TransformerModel(nn.Module):
         x = self.fc_out(x[:, -1, :])
         return x  # shape: (batch_size, 1)
 
-
-
 # --- TRAIN FUNCTION ---
 def train_transformer(model, X_train, y_train, epochs=20, lr=0.001):
     model.train()
@@ -133,36 +130,6 @@ def train_transformer(model, X_train, y_train, epochs=20, lr=0.001):
         status_text.text(f"Training epoch {epoch + 1} / {epochs} — Loss: {avg_loss:.4f}")
         
     return losses
-
-
-def predict_future_prices(model, linear_model, scaler, last_known_features, days_to_predict, window_size):
-    model.eval()
-    predicted_prices = []
-    current_window = last_known_features.copy()  # shape: (window_size, 3)
-
-    for _ in range(days_to_predict):
-        # Scale current window (shape: window_size x 3)
-        scaled_window = scaler.transform(current_window)  # shape: (window_size, 3)
-
-        # Add batch dimension for transformer: (1, window_size, 3)
-        input_tensor = torch.tensor(scaled_window, dtype=torch.float32).unsqueeze(0)
-
-        with torch.no_grad():
-            trans_pred = model(input_tensor).item()
-        
-        # Linear regression expects flattened input: (1, window_size*3)
-        lr_pred = linear_model.predict(scaled_window.flatten().reshape(1, -1))[0]
-
-        final_pred = (trans_pred + lr_pred) / 2
-        predicted_prices.append(final_pred)
-
-        # Update current window: remove oldest day and add new day features
-        # Since only predicting Close price, approximate Open, High, Low = predicted close price
-        new_day_features = np.array([final_pred, final_pred, final_pred])
-
-        current_window = np.vstack((current_window[1:], new_day_features))
-
-    return predicted_prices
 
 # --- TRAINING ---
 st.markdown("### 🚀 Train the Ensemble Model")
@@ -224,40 +191,12 @@ if train_button:
     ax.grid(True)
     st.pyplot(fig)
 
-    # --- PREDICT FUTURE PRICES if end_date is beyond last known date ---
-    last_date = df.index[-1].date()
-    if end_date > last_date:
-        st.markdown(f"### 🔮 Future Closing Price Predictions from {last_date + timedelta(days=1)} to {end_date}")
-        days_to_predict = (end_date - last_date).days
-
-        # Last known features for prediction window: use last window_size days features flattened
-        last_features = features.iloc[-window_size:].values.flatten()
-        future_preds = predict_future_prices(transformer, linear_model, feature_scaler, last_features, days_to_predict, window_size)
-
-        # Create date range for future
-        future_dates = pd.date_range(start=last_date + timedelta(days=1), periods=days_to_predict)
-
-        # Plot historical + future predictions
-        fig2, ax2 = plt.subplots(figsize=(10, 5))
-        ax2.plot(df.index, df['Close'], label="Historical Close Price", color='blue', linewidth=2)
-        ax2.plot(future_dates, future_preds, label="Predicted Future Close Price", color='red', linestyle='--')
-        ax2.set_title(f"{stock_symbol} - Historical and Future Close Price Predictions")
-        ax2.legend()
-        ax2.grid(True)
-        st.pyplot(fig2)
-
-        # Show a dataframe with future predictions
-        df_future = pd.DataFrame({'Date': future_dates, 'Predicted Close': future_preds})
-        df_future.set_index('Date', inplace=True)
-        st.dataframe(df_future)
-
     # --- PLOT LOSS ---
     st.markdown("### 🧠 Transformer Training Loss")
-    fig3, ax3 = plt.subplots()
-    ax3.plot(train_loss, marker='o', color='green')
-    ax3.set_xlabel("Epoch")
-    ax3.set_ylabel("Loss")
-    ax3.set_title("Transformer Training Loss Curve")
-    ax3.grid(True)
-    st.pyplot(fig3)
-    
+    fig2, ax2 = plt.subplots()
+    ax2.plot(train_loss, marker='o', color='green')
+    ax2.set_xlabel("Epoch")
+    ax2.set_ylabel("Loss")
+    ax2.set_title("Transformer Training Loss Curve")
+    ax2.grid(True)
+    st.pyplot(fig2)

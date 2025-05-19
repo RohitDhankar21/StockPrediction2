@@ -70,7 +70,7 @@ class TransformerModel(nn.Module):
         self.model_dim = input_dim
         self.pos_encoder = nn.Linear(input_dim, self.model_dim)
         self.transformer_encoder = nn.TransformerEncoder(
-            nn.TransformerEncoderLayer(d_model=self.model_dim, nhead=num_heads, dim_feedforward=ffn_hid_dim),
+            nn.TransformerEncoderLayer(d_model=self.model_dim, nhead=num_heads, dim_feedforward=ffn_hid_dim, batch_first=True),
             num_layers=num_layers)
         self.fc_out = nn.Linear(self.model_dim, 1)
 

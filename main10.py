@@ -86,7 +86,7 @@ class TransformerModel(nn.Module):
         x = self.pos_encoder(x)
         x = self.transformer_encoder(x)
         x = self.fc_out(x[:, -1, :])
-        return x.squeeze(-1)
+        return x
 
 # --- TRAIN FUNCTION ---
 def train_transformer(model, X_train, y_train, epochs=20, lr=0.001):

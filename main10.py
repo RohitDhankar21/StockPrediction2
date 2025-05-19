@@ -136,17 +136,17 @@ if train_button:
     st.write(f"**RMSE:** {rmse:.4f}")
     st.write(f"**MAPE:** {mape:.2f}%")
 
-# --- PLOT ---
-st.subheader("📈 Actual vs Predicted Closing Prices")
-fig, ax = plt.subplots(figsize=(10, 5))
-ax.plot(dates_test, y_test, label="Actual", color='blue')
-ax.plot(dates_test, y_pred, label="Stacked Prediction", color='orange')
-ax.set_title(f"{stock_symbol} - Actual vs Predicted (Stacked Model)")
-ax.set_xlabel("Date")
-ax.set_ylabel("Closing Price")
-ax.legend()
-plt.xticks(rotation=45)
-st.pyplot(fig)
+    # --- PLOT ---
+    st.subheader("📈 Actual vs Predicted Closing Prices")
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.plot(dates_test, y_test, label="Actual", color='blue')
+    ax.plot(dates_test, y_pred, label="Stacked Prediction", color='orange')
+    ax.set_title(f"{stock_symbol} - Actual vs Predicted (Stacked Model)")
+    ax.set_xlabel("Date")
+    ax.set_ylabel("Closing Price")
+    ax.legend()
+    plt.xticks(rotation=45)
+    st.pyplot(fig)
 
     # --- Loss Plot ---
     st.subheader("🔁 Training Loss (Transformer)")

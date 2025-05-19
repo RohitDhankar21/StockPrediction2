@@ -11,6 +11,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 import matplotlib.pyplot as plt
+from datetime import timedelta
 
 # Set page config
 st.set_page_config(page_title="Stock Predictor", layout="wide")

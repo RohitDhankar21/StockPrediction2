@@ -227,7 +227,7 @@ if train_button:
 
         # Last known features for prediction window: use last window_size days features flattened
         last_features = features.iloc[-window_size:].values.flatten()
-        future_preds = predict_future_prices(transformer, linear_model, scaler, last_features, days_to_predict, window_size)
+        future_preds = predict_future_prices(transformer, linear_model, feature_scaler, last_features, days_to_predict, window_size)
 
         # Create date range for future
         future_dates = pd.date_range(start=last_date + timedelta(days=1), periods=days_to_predict)

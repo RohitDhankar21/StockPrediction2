@@ -12,19 +12,16 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 import matplotlib.pyplot as plt
 
-# --- PAGE CONFIG ---
-st.set_page_config(page_title="Stock Predictor", layout="wide")
-st.title("📈 Stock Prediction with Transformer + Linear Regression (Stacked Ensemble)")
+# Title
+st.title("Stock Prediction with Transformer + Linear Regression (Stacked Ensemble)")
 
 # --- INPUTS ---
-with st.sidebar:
-    st.header("🛠️ Model Settings")
-    stock_symbol = st.text_input("Stock Symbol", "AAPL")
-    start_date = st.date_input("Start Date", pd.to_datetime("2013-01-01"))
-    end_date = st.date_input("End Date", pd.to_datetime("2025-01-01"))
-    window_size = st.number_input("Window Size (sequence length)", min_value=3, max_value=50, value=10, step=1)
-    epochs = st.slider("Training Epochs", 1, 100, 20)
-    batch_size = st.number_input("Batch Size", min_value=8, max_value=256, value=64, step=8)
+stock_symbol = st.text_input("Stock Symbol", "AAPL")
+start_date = st.date_input("Start Date", pd.to_datetime("2013-01-01"))
+end_date = st.date_input("End Date", pd.to_datetime("2025-01-01"))
+window_size = st.number_input("Window Size (sequence length)", min_value=3, max_value=50, value=10, step=1)
+epochs = st.slider("Training Epochs", 1, 100, 20)
+batch_size = st.number_input("Batch Size", min_value=8, max_value=256, value=64, step=8)
 
 # --- DATA LOADING ---
 @st.cache_data
@@ -56,16 +53,16 @@ X_test_scaled = scaler.transform(X_test)
 
 # --- TRANSFORMER MODEL ---
 class TransformerModel(nn.Module):
-    def __init__(self, input_dim, num_layers=1, num_heads=1, ffn_hid_dim=128):
+    def __init__(self, input_dim, num_features, num_layers=1, num_heads=1, ffn_hid_dim=128):
         super().__init__()
-        self.pos_encoder = nn.Linear(3, input_dim)
+        self.pos_encoder = nn.Linear(num_features, input_dim)
         self.transformer_encoder = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(d_model=input_dim, nhead=num_heads, dim_feedforward=ffn_hid_dim, batch_first=True),
             num_layers=num_layers)
         self.fc_out = nn.Linear(input_dim, 1)
 
     def forward(self, x):
-        x = x.view(-1, window_size, 3)  # 3 features per timestep
+        x = x.view(-1, window_size, x.size(1) // window_size)  # (batch, seq_len, features)
         x = self.pos_encoder(x)
         x = self.transformer_encoder(x)
         x = self.fc_out(x[:, -1, :])
@@ -80,9 +77,6 @@ def train_transformer(model, X_train, y_train, epochs=20, lr=0.001):
                                       torch.tensor(y_train, dtype=torch.float32)),
                         batch_size=batch_size, shuffle=True)
     losses = []
-    progress = st.progress(0, text="🔄 Training in progress...")
-    status = st.empty()
-
     for epoch in range(epochs):
         total_loss = 0
         for x_batch, y_batch in loader:
@@ -94,18 +88,16 @@ def train_transformer(model, X_train, y_train, epochs=20, lr=0.001):
             total_loss += loss.item()
         avg_loss = total_loss / len(loader)
         losses.append(avg_loss)
-        progress.progress((epoch + 1) / epochs, text=f"🔁 Epoch {epoch+1}/{epochs} - Loss: {avg_loss:.4f}")
-        status.text(f"Loss: {avg_loss:.4f}")
-    status.success("✅ Training complete!")
     return losses
 
 # --- TRAIN MODELS ---
-train_button = st.button("🚀 Train Stacked Model")
+train_button = st.button("Train Ensemble")
 if train_button:
     input_dim = 64
+    num_features = X_train.shape[1] // window_size
 
     # Train Transformer
-    transformer = TransformerModel(input_dim=input_dim)
+    transformer = TransformerModel(input_dim=input_dim, num_features=num_features)
     train_loss = train_transformer(transformer, X_train_scaled, y_train, epochs=epochs)
 
     # Predict with Transformer
@@ -135,31 +127,25 @@ if train_button:
     mape = np.mean(np.abs((y_test - y_pred) / y_test)) * 100
 
     st.subheader("📊 Performance Metrics")
-    st.markdown(f"""
-    - **MSE:** `{mse:.4f}`
-    - **MAE:** `{mae:.4f}`
-    - **RMSE:** `{rmse:.4f}`
-    - **MAPE:** `{mape:.2f}%`
-    """)
+    st.write(f"**Final Stacked MSE:** {mse:.4f}")
+    st.write(f"**MAE:** {mae:.4f}")
+    st.write(f"**RMSE:** {rmse:.4f}")
+    st.write(f"**MAPE:** {mape:.2f}%")
 
-    # --- PLOT: Prediction ---
+    # --- PLOT ---
     st.subheader("📈 Actual vs Predicted Closing Prices")
     fig, ax = plt.subplots(figsize=(10, 5))
-    ax.plot(y_test, label="Actual", color='royalblue', linewidth=2)
-    ax.plot(y_pred, label="Stacked Prediction", color='yellow', linewidth=2)
-    ax.set_title(f"{stock_symbol} - Actual vs Predicted", fontsize=14)
-    ax.set_xlabel("Time")
-    ax.set_ylabel("Price")
-    ax.grid(True, alpha=0.3)
+    ax.plot(y_test, label="Actual", color='blue')
+    ax.plot(y_pred, label="Stacked Prediction", color='orange')
+    ax.set_title(f"{stock_symbol} - Actual vs Predicted (Stacked Model)")
     ax.legend()
     st.pyplot(fig)
 
-    # --- PLOT: Loss ---
-    st.subheader("📉 Transformer Training Loss")
-    fig2, ax2 = plt.subplots(figsize=(8, 3))
-    ax2.plot(train_loss, color='purple', linewidth=2)
+    # --- Loss Plot ---
+    st.subheader("🔁 Training Loss (Transformer)")
+    fig2, ax2 = plt.subplots()
+    ax2.plot(train_loss)
     ax2.set_xlabel("Epoch")
     ax2.set_ylabel("Loss")
-    ax2.set_title("Training Loss Over Time")
-    ax2.grid(True, linestyle="--", alpha=0.4)
+    ax2.set_title("Transformer Training Loss")
     st.pyplot(fig2)

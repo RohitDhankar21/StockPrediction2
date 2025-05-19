@@ -146,7 +146,7 @@ if train_button:
     st.subheader("📈 Actual vs Predicted Closing Prices")
     fig, ax = plt.subplots(figsize=(10, 5))
     ax.plot(y_test, label="Actual", color='royalblue', linewidth=2)
-    ax.plot(y_pred, label="Stacked Prediction", color='orangered', linestyle='--', linewidth=2)
+    ax.plot(y_pred, label="Stacked Prediction", color='yellow', linewidth=2)
     ax.set_title(f"{stock_symbol} - Actual vs Predicted", fontsize=14)
     ax.set_xlabel("Time")
     ax.set_ylabel("Price")

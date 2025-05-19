@@ -10,7 +10,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, mean_absolute_error
-import plotly.graph_objs as go
+import matplotlib.pyplot as plt
 
 st.title("Stacked Ensemble: Transformer + Linear Regression on OHLC")
 
@@ -38,17 +38,16 @@ target = df['Close']
 
 # --- CREATE SEQUENCES ---
 def create_sequences(features, targets, window=10):
-    X, y, dates = [], [], []
+    X, y = [], []
     for i in range(len(features) - window):
         X.append(features.iloc[i:i + window].values.flatten())
         y.append(targets.iloc[i + window])
-        dates.append(targets.index[i + window])
-    return np.array(X), np.array(y), np.array(dates)
+    return np.array(X), np.array(y)
 
-X, y, dates = create_sequences(features, target, window=window_size)
+X, y = create_sequences(features, target, window=window_size)
 
 # --- SPLIT & SCALE ---
-X_train, X_test, y_train, y_test, dates_train, dates_test = train_test_split(X, y, dates, test_size=0.2, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
@@ -79,7 +78,7 @@ def train_transformer_model(model, X_train, y_train, epochs=50, lr=0.001):
     dataset = TensorDataset(torch.tensor(X_train, dtype=torch.float32), torch.tensor(y_train, dtype=torch.float32))
     loader = DataLoader(dataset, batch_size=64, shuffle=True)
 
-    for epoch in range(epochs):
+    for _ in range(epochs):
         for inputs, targets in loader:
             optimizer.zero_grad()
             outputs = model(inputs)
@@ -88,7 +87,7 @@ def train_transformer_model(model, X_train, y_train, epochs=50, lr=0.001):
             optimizer.step()
     return model
 
-# --- TRAIN & PREDICT ---
+# --- TRAIN MODELS ---
 if st.button("Train & Predict"):
     # Linear Model
     linear_model = LinearRegression()
@@ -126,18 +125,12 @@ if st.button("Train & Predict"):
     st.write(f"**RMSE:** {rmse:.4f}")
     st.write(f"**MAPE:** {mape:.2f}%")
 
-    # --- INTERACTIVE PLOT ---
-    st.subheader("📈 Actual vs Stacked Ensemble Prediction")
-
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=dates_test, y=y_test, mode='lines', name='Actual'))
-    fig.add_trace(go.Scatter(x=dates_test, y=final_preds, mode='lines', name='Predicted'))
-
-    fig.update_layout(
-        title=f"{stock_symbol} Closing Price Prediction",
-        xaxis_title="Date",
-        yaxis_title="Price",
-        hovermode="x unified"
-    )
-
-    st.plotly_chart(fig)
+    # --- PLOT ---
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.plot(y_test, label="Actual", alpha=0.7)
+    ax.plot(final_preds, label="Stacked Ensemble Prediction", alpha=0.7)
+    ax.set_title(f"{stock_symbol}: Actual vs Predicted Close Prices")
+    ax.set_xlabel("Test Sample Index")
+    ax.set_ylabel("Price")
+    ax.legend()
+    st.pyplot(fig)

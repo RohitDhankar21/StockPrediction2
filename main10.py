@@ -44,8 +44,8 @@ def create_sequences(features, targets, window=10):
         y.append(targets.iloc[i + window])
     return np.array(X), np.array(y)
 
-X, y = create_sequences(features, target, window_size)
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+X_train, X_test, y_train, y_test, dates_train, dates_test = train_test_split(
+    X, y, dates, test_size=0.2, random_state=42)
 
 scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
@@ -132,14 +132,17 @@ if train_button:
     st.write(f"**RMSE:** {rmse:.4f}")
     st.write(f"**MAPE:** {mape:.2f}%")
 
-    # --- PLOT ---
-    st.subheader("📈 Actual vs Predicted Closing Prices")
-    fig, ax = plt.subplots(figsize=(10, 5))
-    ax.plot(y_test, label="Actual", color='blue')
-    ax.plot(y_pred, label="Stacked Prediction", color='orange')
-    ax.set_title(f"{stock_symbol} - Actual vs Predicted (Stacked Model)")
-    ax.legend()
-    st.pyplot(fig)
+# --- PLOT ---
+st.subheader("📈 Actual vs Predicted Closing Prices")
+fig, ax = plt.subplots(figsize=(10, 5))
+ax.plot(dates_test, y_test, label="Actual", color='blue')
+ax.plot(dates_test, y_pred, label="Stacked Prediction", color='orange')
+ax.set_title(f"{stock_symbol} - Actual vs Predicted (Stacked Model)")
+ax.set_xlabel("Date")
+ax.set_ylabel("Closing Price")
+ax.legend()
+plt.xticks(rotation=45)
+st.pyplot(fig)
 
     # --- Loss Plot ---
     st.subheader("🔁 Training Loss (Transformer)")

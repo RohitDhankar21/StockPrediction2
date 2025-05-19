@@ -185,7 +185,7 @@ if train_button:
     st.markdown("### 📈 Actual vs Predicted Prices")
     fig, ax = plt.subplots(figsize=(10, 5))
     ax.plot(y_test, label="Actual", color='blue', linewidth=2)
-    ax.plot(y_pred, label="Stacked Prediction", color='orange', linestyle='--')
+    ax.plot(y_pred, label="Stacked Prediction", color='yellow')
     ax.set_title(f"{stock_symbol} - Actual vs Predicted Close Prices")
     ax.legend()
     ax.grid(True)

@@ -152,6 +152,8 @@ if train_button:
     # -------------------------------
     from statsmodels.tsa.stattools import adfuller
 
+    
+
     # ARIMA section with rolling predictions
     train_size = int(len(prices) * 0.8)
     arima_train = prices[:train_size]
@@ -171,7 +173,7 @@ if train_button:
     history = list(arima_train)
     
     for t in range(len(arima_test)):
-        model = ARIMA(history, order=(5, 1, 2))  # Tune these (p,d,q) values
+        model = ARIMA(df['Close'], order=(5,1,2))  # Tune these (p,d,q) values
         model_fit = model.fit()
         yhat = model_fit.forecast()[0]
         arima_preds.append(yhat)
